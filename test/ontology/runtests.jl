@@ -1,6 +1,51 @@
 using Test
 
 const Ontology = TaxonomyOntologyConverter.Ontology
+const Template = TaxonomyOntologyConverter.Template
+
+function ontology_snapshot(ontology)
+    class_snapshot = sort([
+        (
+            id,
+            class.labels,
+            class.definitions,
+            sort!(collect(class.superclasses)),
+            [(a.property, a.value, a.language, a.datatype) for a in class.annotations],
+        ) for (id, class) in ontology.classes
+    ]; by=first)
+    object_property_snapshot = sort([
+        (
+            id,
+            property.labels,
+            property.definitions,
+            sort!(collect(property.domains)),
+            sort!(collect(property.ranges)),
+            [(a.property, a.value, a.language, a.datatype) for a in property.annotations],
+        ) for (id, property) in ontology.object_properties
+    ]; by=first)
+    data_property_snapshot = sort([
+        (
+            id,
+            property.labels,
+            property.definitions,
+            sort!(collect(property.domains)),
+            sort!(collect(property.ranges)),
+            [(a.property, a.value, a.language, a.datatype) for a in property.annotations],
+        ) for (id, property) in ontology.data_properties
+    ]; by=first)
+    return (
+        ontology.iri,
+        ontology.version,
+        ontology.labels,
+        ontology.definitions,
+        ontology.metadata,
+        class_snapshot,
+        object_property_snapshot,
+        data_property_snapshot,
+        sort!(collect(keys(ontology.individuals))),
+        [(r.subject, r.predicate, r.object) for r in ontology.relationships],
+    )
+end
 
 @testset "Ontology model" begin
     @testset "constructing a semantically valid ontology" begin
@@ -134,5 +179,102 @@ const Ontology = TaxonomyOntologyConverter.Ontology
         issue_codes = getfield.(Ontology.validate(ontology), :code)
         @test :empty_annotation_property in issue_codes
         @test isempty(class.annotations)
+    end
+
+    @testset "deterministic template generation" begin
+        function example_template(concept_metadata)
+            return Template.IntermediateTemplate(
+                concepts=[
+                    Template.Concept(
+                        "deep-learning";
+                        name="Deep Learning",
+                        description="A subfield of machine learning.",
+                        parent="machine-learning",
+                        metadata=concept_metadata,
+                    ),
+                    Template.Concept(
+                        "ai";
+                        name="AI",
+                        labels=["artificial intelligence"],
+                        description="The study of intelligent systems.",
+                    ),
+                    Template.Concept(
+                        "machine-learning";
+                        name="Machine Learning",
+                        description="A field within artificial intelligence.",
+                        parent="ai",
+                    ),
+                ],
+                relationships=[
+                    Template.ObjectRelationship(
+                        "applied-to";
+                        name="applied to",
+                        source="deep-learning",
+                        target="ai",
+                        description="An application of deep learning.",
+                        metadata=Dict("source" => "taxonomy"),
+                    ),
+                ],
+                properties=[
+                    Template.DataProperty(
+                        "model-name";
+                        name="model name",
+                        value_type="xsd:string",
+                        description="The name of a model.",
+                        domain="machine-learning",
+                    ),
+                ],
+                metadata=Dict(
+                    "iri" => "https://example.org/ai",
+                    "version" => "1.0",
+                    "labels" => ["AI ontology"],
+                    "source" => "example taxonomy",
+                ),
+            )
+        end
+
+        first_template = example_template(Dict(
+            "z-source" => "taxonomy",
+            "details" => Dict("second" => 2, "first" => 1),
+        ))
+        second_template = example_template(Dict(
+            "details" => Dict("first" => 1, "second" => 2),
+            "z-source" => "taxonomy",
+        ))
+
+        generated = Ontology.generate_ontology(first_template)
+        repeated = Ontology.generate_ontology(second_template)
+
+        @test ontology_snapshot(generated) == ontology_snapshot(repeated)
+        @test generated.iri == "https://example.org/ai"
+        @test generated.version == "1.0"
+        @test generated.metadata == first_template.metadata
+        @test generated.classes["ai"].labels == ["AI", "artificial intelligence"]
+        @test generated.classes["ai"].definitions == ["The study of intelligent systems."]
+        @test generated.classes["machine-learning"].superclasses == Set(["ai"])
+        @test generated.classes["deep-learning"].superclasses == Set(["machine-learning"])
+        @test generated.object_properties["applied-to"].domains == Set(["deep-learning"])
+        @test generated.object_properties["applied-to"].ranges == Set(["ai"])
+        @test generated.data_properties["model-name"].domains == Set(["machine-learning"])
+        @test generated.data_properties["model-name"].ranges == Set(["xsd:string"])
+        @test generated.classes["deep-learning"].annotations[1].property ==
+            "urn:taxonomy-ontology-converter:metadata:details"
+        @test isempty(generated.individuals)
+        @test isempty(generated.relationships)
+        @test Ontology.is_valid(generated)
+    end
+
+    @testset "generator rejects invalid input and output" begin
+        invalid_template = Template.IntermediateTemplate(
+            concepts=[Template.Concept("missing-label")],
+        )
+        @test_throws Ontology.TemplateValidationError Ontology.generate_ontology(invalid_template)
+
+        template_with_empty_description = Template.IntermediateTemplate(
+            concepts=[Template.Concept("concept"; name="Concept", description="")],
+        )
+        @test_throws Ontology.OntologyGenerationError Ontology.generate_ontology(
+            template_with_empty_description,
+        )
     end
 end

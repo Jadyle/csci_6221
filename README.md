@@ -10,12 +10,12 @@ ontology model. OWL generation and serialization are not implemented yet.
 - `Taxonomy` — taxonomy loading, parsing, and validation.
 - `Template` — intermediate-template schema, validation, and serialization.
 - `LLM` — structured extraction prompts, provider interface, and template validation.
-- `Ontology` — semantic ontology model for classes, properties, individuals, and relationships.
+- `Ontology` — semantic ontology model and deterministic template-to-model generation.
 - `Enrichment` — manual and LLM-assisted ontology enrichment.
 - `Utils` — logging and configuration utilities.
 
 Each component is a nested module, for example
-`TaxonomyOntologyConverter.Taxonomy`. Taxonomy parsing and ontology
+`TaxonomyOntologyConverter.Taxonomy`. Taxonomy parsing and OWL
 generation/serialization remain placeholders.
 
 ### Intermediate template
@@ -90,7 +90,16 @@ The intermediate template maps naturally to this model:
 - Template metadata can populate ontology metadata; concept/property metadata
   can be represented as annotations or retained as provenance.
 
-No automatic template-to-ontology mapper has been added yet.
+`Ontology.generate_ontology(template)` performs this mapping after validating
+the template, then validates the resulting model. It does not use an LLM and
+does not serialize OWL. It processes records in identifier order so equivalent
+validated templates produce the same model structure.
+
+```julia
+const Ontology = TaxonomyOntologyConverter.Ontology
+ontology = Ontology.generate_ontology(template)
+ontology.classes["deep-learning"].superclasses
+```
 
 ## Run the tests
 

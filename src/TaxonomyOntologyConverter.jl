@@ -28,6 +28,9 @@ include("llm/enrichment.jl")
 end
 
 module Ontology
+using JSON
+import ..Template
+
 include("ontology/model.jl")
 include("ontology/classes.jl")
 include("ontology/properties.jl")
