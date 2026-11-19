@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0",
+  "concepts": [
+    {
+      "id": "species",
+      "name": "Species",
+      "labels": ["species", "organism type"],
+      "description": "A group of organisms sharing defining characteristics.",
+      "parent": null,
+      "metadata": {
+        "source": "Example taxonomy",
+        "confidence": 0.98
+      }
+    },
+    {
+      "id": "habitat",
+      "name": "Habitat",
+      "labels": ["habitat"],
+      "description": "The natural environment of an organism.",
+      "parent": null,
+      "metadata": {}
+    }
+  ],
+  "relationships": [
+    {
+      "id": "inhabits",
+      "name": "inhabits",
+      "source": "species",
+      "target": "habitat",
+      "description": "Associates a species with its habitat.",
+      "metadata": {}
+    }
+  ],
+  "properties": [
+    {
+      "id": "typical-lifespan",
+      "name": "typical lifespan",
+      "type": "number",
+      "description": "Typical lifespan, in years.",
+      "domain": "species",
+      "metadata": {
+        "unit": "years"
+      }
+    }
+  ],
+  "metadata": {
+    "source": "example taxonomy extraction"
+  }
+}
