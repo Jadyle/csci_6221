@@ -1,4 +1,5 @@
-export MockLLM, ExtractionResponseError, ExtractionValidationError, extract_template
+export MockLLM, ExtractionResponseError, ExtractionValidationError
+export parse_template_response, extract_template
 
 """
 A deterministic LLM implementation for tests and offline examples.
@@ -42,6 +43,20 @@ function Base.showerror(io::IO, error::ExtractionValidationError)
 end
 
 """
+    parse_template_response(response) -> IntermediateTemplate
+
+Deserialize an LLM response without validating it. This lets a caller keep
+response parsing and Julia-side template validation as distinct pipeline stages.
+"""
+function parse_template_response(response::AbstractString)
+    try
+        return from_json(response)::IntermediateTemplate
+    catch error
+        throw(ExtractionResponseError(error))
+    end
+end
+
+"""
     extract_template(llm::AbstractLLM, taxonomy)
 
 Prompt an LLM to extract a JSON intermediate template, deserialize the response,
@@ -53,11 +68,7 @@ function extract_template(llm::AbstractLLM, taxonomy)
     response isa AbstractString ||
         throw(ArgumentError("complete must return a string response, got $(typeof(response))"))
 
-    template = try
-        from_json(response)
-    catch error
-        throw(ExtractionResponseError(error))
-    end
+    template = parse_template_response(response)
 
     issues = validate(template)
     isempty(issues) || throw(ExtractionValidationError(issues))

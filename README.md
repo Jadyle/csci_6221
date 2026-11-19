@@ -17,8 +17,10 @@ for Protégé.
 - `Utils` — logging and configuration utilities.
 
 Each component is a nested module, for example
-`TaxonomyOntologyConverter.Taxonomy`. Taxonomy parsing remains a placeholder;
-ontology enrichment supports manual changes and reviewable LLM proposals.
+`TaxonomyOntologyConverter.Taxonomy`. The taxonomy parser checks JSON syntax
+and normalizes line endings; other supported formats are passed to extraction
+as text rather than structurally parsed. Ontology enrichment supports manual
+changes and reviewable LLM proposals.
 
 ### Intermediate template
 
@@ -134,6 +136,39 @@ julia --project -e 'using TaxonomyOntologyConverter; T=TaxonomyOntologyConverter
 Then open [`data/output/example.owl`](./data/output/example.owl) in Protégé to
 visualize and inspect the generated classes, properties, annotations, and
 relationships.
+
+### End-to-end conversion
+
+`convert_taxonomy` runs input loading, parsing, taxonomy validation, LLM
+extraction, template validation, ontology generation and validation, and OWL
+serialization. Pass an implementation of `LLM.AbstractLLM`; the core package
+does not select or configure a provider. The function returns a
+`ConversionResult` containing the parsed taxonomy, validated template,
+ontology model, and saved file path. Errors identify the pipeline stage and
+preserve the underlying cause.
+
+The included taxonomy and intermediate-template response make an offline
+example:
+
+```sh
+julia --project=. -e '
+using TaxonomyOntologyConverter
+const LLM = TaxonomyOntologyConverter.LLM
+mock = LLM.MockLLM(read("data/intermediate/example-template.json", String))
+result = convert_taxonomy(
+    "data/input/example-taxonomy.txt";
+    llm=mock,
+    output_path="data/output/example-pipeline.owl",
+)
+println(result.output_path)
+'
+```
+
+Open [`data/output/example-pipeline.owl`](./data/output/example-pipeline.owl)
+in Protégé. For optional enrichment, use `result.ontology` with the manual
+enrichment functions or request LLM suggestions, review them, and explicitly
+apply approved suggestions before exporting the final OWL file; conversion
+never applies enrichment automatically.
 
 ### Ontology enrichment
 

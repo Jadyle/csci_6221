@@ -20,6 +20,7 @@ end
 
 module LLM
 using JSON
+import ..Taxonomy
 using ..Template: IntermediateTemplate, ValidationIssue, from_json, validate
 
 include("llm/prompting.jl")
@@ -54,5 +55,7 @@ module Utils
 include("utils/logging.jl")
 include("utils/configuration.jl")
 end
+
+include("pipeline.jl")
 
 end

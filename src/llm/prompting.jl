@@ -31,6 +31,8 @@ function taxonomy_text(taxonomy)
 end
 
 taxonomy_text(taxonomy::AbstractString) = String(taxonomy)
+taxonomy_text(taxonomy::Taxonomy.ParsedTaxonomy) =
+    "Input format: $(taxonomy.format)\n\n$(taxonomy.content)"
 
 const EXTRACTION_INSTRUCTIONS = """
 You extract structured information from taxonomies for an ontology-construction workflow.
