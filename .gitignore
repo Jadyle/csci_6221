@@ -1,0 +1,7 @@
+# Julia
+/Manifest.toml
+/coverage/
+/lcov.info
+
+# macOS
+.DS_Store
