@@ -17,8 +17,8 @@ for Protégé.
 - `Utils` — logging and configuration utilities.
 
 Each component is a nested module, for example
-`TaxonomyOntologyConverter.Taxonomy`. Taxonomy parsing and OWL
-enrichment remain placeholders.
+`TaxonomyOntologyConverter.Taxonomy`. Taxonomy parsing remains a placeholder;
+ontology enrichment supports manual changes and reviewable LLM proposals.
 
 ### Intermediate template
 
@@ -134,6 +134,47 @@ julia --project -e 'using TaxonomyOntologyConverter; T=TaxonomyOntologyConverter
 Then open [`data/output/example.owl`](./data/output/example.owl) in Protégé to
 visualize and inspect the generated classes, properties, annotations, and
 relationships.
+
+### Ontology enrichment
+
+Both enrichment modes update the same `OntologyModel`. Manual operations are
+available from `TaxonomyOntologyConverter.Enrichment` for classes, object and
+data properties, individuals, relationships, definitions, annotations, and
+restrictions. `add_object_property!` represents relationships between classes
+through domains and ranges; `add_relationship!` records assertions between
+individuals. For example:
+
+```julia
+const Enrichment = TaxonomyOntologyConverter.Enrichment
+Enrichment.add_class!(ontology, "Mammal"; parent="Animal",
+                      definition="A warm-blooded vertebrate.")
+Enrichment.add_object_property!(ontology, "lives-in";
+                                domains=["Mammal"], ranges=["Habitat"])
+Enrichment.add_restriction!(ontology, "Mammal", "lives-in";
+                            kind=:some_values_from, value="Habitat")
+```
+
+LLM-assisted enrichment accepts a text dataset (including CSV or documentation)
+or a JSON-compatible dictionary/array. The LLM returns validated structured
+suggestions; it never receives an API that can modify the ontology directly.
+Review suggestion IDs, then pass only approved IDs to `apply_suggestions!`.
+Application is atomic and validates the updated model:
+
+```julia
+const LLM = TaxonomyOntologyConverter.LLM
+llm = MyProvider() # subtype LLM.AbstractLLM and implement LLM.complete
+proposal = Enrichment.propose_enrichment(llm, ontology, read("research-notes.csv", String))
+foreach(s -> println(s.id, ": ", s.action, " — ", s.rationale), proposal.suggestions)
+
+# Apply only after reviewing the printed proposals:
+Enrichment.apply_suggestions!(ontology, proposal, ["s1", "s3"])
+@assert isempty(TaxonomyOntologyConverter.Ontology.validate(ontology))
+TaxonomyOntologyConverter.Ontology.save_ontology(ontology, "data/output/enriched.owl")
+```
+
+Supported restrictions include existential/universal fillers, has-value, and
+minimum/maximum/exact cardinality constraints. `Ontology.validate` checks
+restriction references before OWL export.
 
 ## Run the tests
 

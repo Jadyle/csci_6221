@@ -59,6 +59,14 @@ const _OWL_CLASS = RDF.IRI(_OWL_NS * "Class")
 const _OWL_OBJECT_PROPERTY = RDF.IRI(_OWL_NS * "ObjectProperty")
 const _OWL_DATATYPE_PROPERTY = RDF.IRI(_OWL_NS * "DatatypeProperty")
 const _OWL_NAMED_INDIVIDUAL = RDF.IRI(_OWL_NS * "NamedIndividual")
+const _OWL_RESTRICTION = RDF.IRI(_OWL_NS * "Restriction")
+const _OWL_ON_PROPERTY = RDF.IRI(_OWL_NS * "onProperty")
+const _OWL_SOME_VALUES_FROM = RDF.IRI(_OWL_NS * "someValuesFrom")
+const _OWL_ALL_VALUES_FROM = RDF.IRI(_OWL_NS * "allValuesFrom")
+const _OWL_HAS_VALUE = RDF.IRI(_OWL_NS * "hasValue")
+const _OWL_MIN_CARDINALITY = RDF.IRI(_OWL_NS * "minCardinality")
+const _OWL_MAX_CARDINALITY = RDF.IRI(_OWL_NS * "maxCardinality")
+const _OWL_CARDINALITY = RDF.IRI(_OWL_NS * "cardinality")
 const _OWL_VERSION_INFO = RDF.IRI(_OWL_NS * "versionInfo")
 const _OWL_AXIOM = RDF.IRI(_OWL_NS * "Axiom")
 const _OWL_ANNOTATED_SOURCE = RDF.IRI(_OWL_NS * "annotatedSource")
@@ -247,6 +255,69 @@ function _ontology_graph(ontology::OntologyModel)
             push!(graph, RDF.Triple(subject, _RDFS_RANGE, _datatype_iri(ontology, range)))
         end
         foreach(annotation -> _add_annotation!(graph, ontology, subject, annotation), property.annotations)
+    end
+
+    restrictions = sort!(
+        copy(ontology.restrictions);
+        by=restriction -> (
+            restriction.class,
+            String(restriction.property_kind),
+            restriction.property,
+            String(restriction.kind),
+            something(restriction.value, ""),
+            something(restriction.cardinality, -1),
+        ),
+    )
+    for restriction in restrictions
+        restriction_node = RDF.BlankNode(blank_node_id)
+        blank_node_id += UInt64(1)
+        property = _resolve_iri(ontology, restriction.property)
+        push!(graph, RDF.Triple(
+            _resolve_iri(ontology, restriction.class),
+            _RDFS_SUBCLASS,
+            restriction_node,
+        ))
+        push!(graph, RDF.Triple(restriction_node, _RDF_TYPE, _OWL_RESTRICTION))
+        push!(graph, RDF.Triple(restriction_node, _OWL_ON_PROPERTY, property))
+
+        if restriction.kind in (:some_values_from, :all_values_from)
+            filler = if restriction.property_kind == :object
+                _resolve_iri(ontology, something(restriction.value))
+            else
+                _datatype_iri(ontology, something(restriction.value))
+            end
+            predicate = restriction.kind == :some_values_from ?
+                _OWL_SOME_VALUES_FROM : _OWL_ALL_VALUES_FROM
+            push!(graph, RDF.Triple(restriction_node, predicate, filler))
+        elseif restriction.kind == :has_value
+            value = if restriction.property_kind == :object
+                _resolve_iri(ontology, something(restriction.value))
+            else
+                data_property = ontology.data_properties[restriction.property]::DataProperty
+                datatype = if !isnothing(restriction.datatype)
+                    _datatype_iri(ontology, restriction.datatype)
+                elseif length(data_property.ranges) == 1
+                    _datatype_iri(ontology, only(data_property.ranges))
+                elseif isempty(data_property.ranges)
+                    RDF.IRI(_XSD_NS * "string")
+                else
+                    throw(ArgumentError(
+                        "data-property has-value restriction on '$(restriction.property)' needs an explicit datatype when the property has multiple ranges",
+                    ))
+                end
+                RDF.Literal(something(restriction.value), datatype)
+            end
+            push!(graph, RDF.Triple(restriction_node, _OWL_HAS_VALUE, value))
+        else
+            predicate = restriction.kind == :min_cardinality ? _OWL_MIN_CARDINALITY :
+                restriction.kind == :max_cardinality ? _OWL_MAX_CARDINALITY :
+                _OWL_CARDINALITY
+            cardinality = RDF.Literal(
+                string(something(restriction.cardinality)),
+                RDF.IRI(_XSD_NS * "nonNegativeInteger"),
+            )
+            push!(graph, RDF.Triple(restriction_node, predicate, cardinality))
+        end
     end
 
     for identifier in sort!(collect(keys(ontology.individuals)))

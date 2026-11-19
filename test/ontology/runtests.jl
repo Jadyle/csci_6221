@@ -45,6 +45,17 @@ function ontology_snapshot(ontology)
         data_property_snapshot,
         sort!(collect(keys(ontology.individuals))),
         [(r.subject, r.predicate, r.object) for r in ontology.relationships],
+        sort!([
+            (
+                restriction.class,
+                restriction.property,
+                restriction.property_kind,
+                restriction.kind,
+                restriction.value,
+                restriction.cardinality,
+                restriction.datatype,
+            ) for restriction in ontology.restrictions
+        ]; by=string),
     )
 end
 
@@ -180,6 +191,59 @@ end
         issue_codes = getfield.(Ontology.validate(ontology), :code)
         @test :empty_annotation_property in issue_codes
         @test isempty(class.annotations)
+    end
+
+    @testset "object and data property restrictions" begin
+        ontology = Ontology.OntologyModel()
+        Ontology.add_class!(ontology, "Animal")
+        Ontology.add_class!(ontology, "Habitat")
+        Ontology.add_object_property!(ontology, "lives-in")
+        Ontology.add_data_property!(ontology, "age"; ranges=["xsd:integer"])
+        Ontology.add_individual!(ontology, "forest"; types=["Habitat"])
+
+        some_habitat = Ontology.add_restriction!(
+            ontology,
+            "Animal",
+            "lives-in";
+            kind=:some_values_from,
+            value="Habitat",
+        )
+        minimum_age = Ontology.add_restriction!(
+            ontology,
+            "Animal",
+            "age";
+            property_kind=:data,
+            kind=:min_cardinality,
+            cardinality=1,
+        )
+        has_age = Ontology.add_restriction!(
+            ontology,
+            "Animal",
+            "age";
+            property_kind=:data,
+            kind=:has_value,
+            value="12",
+            datatype="xsd:integer",
+        )
+
+        @test some_habitat.value == "Habitat"
+        @test minimum_age.cardinality == 1
+        @test has_age.datatype == "xsd:integer"
+        @test isempty(Ontology.validate(ontology))
+        @test_throws ArgumentError Ontology.add_restriction!(
+            ontology,
+            "Animal",
+            "lives-in";
+            kind=:all_values_from,
+            value="Unknown",
+        )
+        @test_throws ArgumentError Ontology.OntologyRestriction(
+            "Animal",
+            "age";
+            property_kind=:data,
+            kind=:min_cardinality,
+            cardinality=-1,
+        )
     end
 
     @testset "deterministic template generation" begin
@@ -328,6 +392,22 @@ end
             grows_in.id,
             forest.id,
         )
+        Ontology.add_restriction!(
+            ontology,
+            "Plant species",
+            "grows-in";
+            kind=:some_values_from,
+            value="Habitat",
+        )
+        Ontology.add_restriction!(
+            ontology,
+            "Plant species",
+            "height";
+            property_kind=:data,
+            kind=:has_value,
+            value="1.5",
+            datatype="xsd:decimal",
+        )
         Ontology.add_annotation!(plant, "dcterms:source", "field guide"; language="en")
         Ontology.add_annotation!(relationship, "rdfs:comment", "Observed in the field.")
 
@@ -351,6 +431,10 @@ end
             owl_object_property = RDF.IRI("http://www.w3.org/2002/07/owl#ObjectProperty")
             owl_ontology = RDF.IRI("http://www.w3.org/2002/07/owl#Ontology")
             owl_version_info = RDF.IRI("http://www.w3.org/2002/07/owl#versionInfo")
+            owl_restriction = RDF.IRI("http://www.w3.org/2002/07/owl#Restriction")
+            owl_on_property = RDF.IRI("http://www.w3.org/2002/07/owl#onProperty")
+            owl_some_values_from = RDF.IRI("http://www.w3.org/2002/07/owl#someValuesFrom")
+            owl_has_value = RDF.IRI("http://www.w3.org/2002/07/owl#hasValue")
             xsd_decimal = RDF.IRI("http://www.w3.org/2001/XMLSchema#decimal")
             ontology_iri = RDF.IRI("https://example.org/ecology")
             plant_iri = RDF.IRI(base * "Plant%20species")
@@ -395,6 +479,30 @@ end
                 RDF.IRI("http://purl.org/dc/terms/source"),
                 RDF.Literal("field guide"; lang="en"),
             ) in graph
+            restriction_nodes = [
+                triple.subject for triple in graph
+                if triple.predicate == rdf_type && triple.object == owl_restriction
+            ]
+            @test length(restriction_nodes) == 2
+            some_habitat_node = only([
+                node for node in restriction_nodes
+                if RDF.Triple(node, owl_on_property, property_iri) in graph &&
+                   RDF.Triple(node, owl_some_values_from, habitat_iri) in graph
+            ])
+            data_value_node = only([
+                node for node in restriction_nodes
+                if RDF.Triple(node, owl_on_property, RDF.IRI(base * "height")) in graph &&
+                   RDF.Triple(
+                       node,
+                       owl_has_value,
+                       RDF.Literal(
+                           "1.5",
+                           RDF.IRI("http://www.w3.org/2001/XMLSchema#decimal"),
+                       ),
+                   ) in graph
+            ])
+            @test RDF.Triple(plant_iri, rdfs_subclass, some_habitat_node) in graph
+            @test RDF.Triple(plant_iri, rdfs_subclass, data_value_node) in graph
             @test any(
                 triple -> triple.predicate == RDF.IRI(
                     "urn:taxonomy-ontology-converter:metadata:source",

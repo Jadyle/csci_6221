@@ -1,5 +1,6 @@
 export OntologyModel, Annotation, OntologyValidationIssue, validate, is_valid
 export add_annotation!
+export OntologyRestriction
 
 abstract type AbstractOntologyClass end
 abstract type AbstractObjectProperty end
@@ -15,6 +16,80 @@ struct Annotation
     value::String
     language::Union{Nothing,String}
     datatype::Union{Nothing,String}
+end
+
+"""
+A class restriction on an object or data property.
+
+`kind` is one of `:some_values_from`, `:all_values_from`, `:has_value`,
+`:min_cardinality`, `:max_cardinality`, or `:exact_cardinality`.
+"""
+struct OntologyRestriction
+    class::String
+    property::String
+    property_kind::Symbol
+    kind::Symbol
+    value::Union{Nothing,String}
+    cardinality::Union{Nothing,Int}
+    datatype::Union{Nothing,String}
+end
+
+Base.:(==)(left::OntologyRestriction, right::OntologyRestriction) =
+    left.class == right.class &&
+    left.property == right.property &&
+    left.property_kind == right.property_kind &&
+    left.kind == right.kind &&
+    left.value == right.value &&
+    left.cardinality == right.cardinality &&
+    left.datatype == right.datatype
+
+function OntologyRestriction(
+    class::AbstractString,
+    property::AbstractString;
+    property_kind::Symbol=:object,
+    kind::Symbol,
+    value::Union{AbstractString,Nothing}=nothing,
+    cardinality::Union{Integer,Nothing}=nothing,
+    datatype::Union{AbstractString,Nothing}=nothing,
+)
+    property_kind in (:object, :data) ||
+        throw(ArgumentError("restriction property_kind must be :object or :data"))
+    kind in (
+        :some_values_from,
+        :all_values_from,
+        :has_value,
+        :min_cardinality,
+        :max_cardinality,
+        :exact_cardinality,
+    ) || throw(ArgumentError("unsupported restriction kind '$kind'"))
+
+    requires_value = kind in (:some_values_from, :all_values_from, :has_value)
+    requires_cardinality = kind in (:min_cardinality, :max_cardinality, :exact_cardinality)
+    requires_value == !isnothing(value) ||
+        throw(ArgumentError("restriction '$kind' must have $(requires_value ? "a value" : "no value")"))
+    requires_cardinality == !isnothing(cardinality) ||
+        throw(ArgumentError(
+            "restriction '$kind' must have $(requires_cardinality ? "a cardinality" : "no cardinality")",
+        ))
+    !isnothing(cardinality) && cardinality < 0 &&
+        throw(ArgumentError("restriction cardinality must not be negative"))
+    !isnothing(datatype) &&
+        (kind != :has_value || property_kind != :data) &&
+        throw(ArgumentError("datatype is only valid for data-property has-value restrictions"))
+    !isnothing(value) && isempty(strip(value)) &&
+        throw(ArgumentError("restriction value must not be empty"))
+    !isnothing(datatype) && isempty(strip(datatype)) &&
+        throw(ArgumentError("restriction datatype must not be empty"))
+
+    return OntologyRestriction(
+        String(class),
+        String(property),
+        property_kind,
+        kind,
+        isnothing(value) ? nothing : String(value),
+        isnothing(cardinality) ? nothing : Int(cardinality),
+        isnothing(datatype) ? nothing : String(datatype),
+    )
 end
 
 function Annotation(
@@ -44,7 +119,8 @@ end
 Mutable in-memory ontology model, independent of any LLM or serialization format.
 
 Entity registries are keyed by identifier. Class/property/individual identifiers
-are kept in separate registries to allow OWL-style punning.
+are kept in separate registries to allow OWL-style punning. Restrictions are
+stored as class axioms and are validated and serialized with the ontology.
 """
 mutable struct OntologyModel
     iri::Union{Nothing,String}
@@ -58,6 +134,7 @@ mutable struct OntologyModel
     data_properties::Dict{String,AbstractDataProperty}
     individuals::Dict{String,AbstractOntologyIndividual}
     relationships::Vector{AbstractOntologyRelationship}
+    restrictions::Vector{OntologyRestriction}
 end
 
 function OntologyModel(;
@@ -80,6 +157,7 @@ function OntologyModel(;
         Dict{String,AbstractDataProperty}(),
         Dict{String,AbstractOntologyIndividual}(),
         AbstractOntologyRelationship[],
+        OntologyRestriction[],
     )
 end
 
@@ -109,6 +187,8 @@ function _require_annotation(annotation::Annotation)
         throw(ArgumentError("annotation language must not be empty when provided"))
     !isnothing(annotation.datatype) && isempty(strip(annotation.datatype)) &&
         throw(ArgumentError("annotation datatype must not be empty when provided"))
+    !isnothing(annotation.language) && !isnothing(annotation.datatype) &&
+        throw(ArgumentError("annotation cannot specify both a language and a datatype"))
     return annotation
 end
 
@@ -147,6 +227,13 @@ function _validate_annotations!(issues, path, annotations)
                 :empty_annotation_datatype,
                 "$path.annotations[$index].datatype",
                 "annotation datatype must not be empty when provided",
+            ))
+        end
+        if !isnothing(annotation.language) && !isnothing(annotation.datatype)
+            push!(issues, OntologyValidationIssue(
+                :conflicting_annotation_literal,
+                "$path.annotations[$index]",
+                "annotation cannot specify both a language and a datatype",
             ))
         end
     end

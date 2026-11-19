@@ -286,6 +286,7 @@ function validate(ontology::OntologyModel)
         end
     end
 
+    _validate_restrictions!(issues, ontology)
     return issues
 end
 

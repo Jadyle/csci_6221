@@ -36,12 +36,16 @@ import ..Template
 include("ontology/model.jl")
 include("ontology/classes.jl")
 include("ontology/properties.jl")
+include("ontology/restrictions.jl")
 include("ontology/relationships.jl")
 include("ontology/generator.jl")
 include("ontology/serialization.jl")
 end
 
 module Enrichment
+using JSON
+import ..LLM: AbstractLLM, complete
+import ..Ontology
 include("enrichment/manual.jl")
 include("enrichment/llm.jl")
 end

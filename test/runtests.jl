@@ -14,3 +14,4 @@ end
 include("template/runtests.jl")
 include("llm/runtests.jl")
 include("ontology/runtests.jl")
+include("enrichment/runtests.jl")
