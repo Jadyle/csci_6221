@@ -538,6 +538,7 @@ end
         mktempdir() do directory
             path = joinpath(directory, "anonymous.owl")
             @test Ontology.save_ontology(ontology_without_iri, path) == path
+            @test_throws ArgumentError Ontology.save_ontology(ontology_without_iri, "")
             @test_throws ArgumentError Ontology.save_ontology(
                 invalid_local,
                 joinpath(directory, "invalid.owl"),

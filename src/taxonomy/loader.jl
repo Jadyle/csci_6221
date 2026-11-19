@@ -6,22 +6,20 @@ struct TaxonomyDocument
     format::Symbol
 end
 
+const _TAXONOMY_FORMATS = Dict(
+    ".json" => :json,
+    ".csv" => :csv,
+    ".html" => :html,
+    ".htm" => :html,
+    ".md" => :markdown,
+    ".markdown" => :markdown,
+    ".xml" => :xml,
+    ".txt" => :text,
+)
+
 function _taxonomy_format(path::AbstractString)
     extension = lowercase(splitext(path)[2])
-    return get(
-        Dict(
-            ".json" => :json,
-            ".csv" => :csv,
-            ".html" => :html,
-            ".htm" => :html,
-            ".md" => :markdown,
-            ".markdown" => :markdown,
-            ".xml" => :xml,
-            ".txt" => :text,
-        ),
-        extension,
-        :text,
-    )
+    return get(_TAXONOMY_FORMATS, extension, :text)
 end
 
 """

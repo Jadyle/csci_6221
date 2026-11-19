@@ -12,6 +12,7 @@ using Test
 end
 
 include("template/runtests.jl")
+include("taxonomy/runtests.jl")
 include("llm/runtests.jl")
 include("ontology/runtests.jl")
 include("enrichment/runtests.jl")

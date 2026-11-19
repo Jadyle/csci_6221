@@ -25,7 +25,6 @@ using ..Template: IntermediateTemplate, ValidationIssue, from_json, validate
 
 include("llm/prompting.jl")
 include("llm/extraction.jl")
-include("llm/enrichment.jl")
 end
 
 module Ontology

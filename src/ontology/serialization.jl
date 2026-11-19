@@ -462,9 +462,11 @@ Serialize an ontology model as RDF/XML in an `.owl` file that can be opened in
 Protégé. Local entity identifiers are resolved against `ontology.iri`.
 """
 function save_ontology(ontology::OntologyModel, path::AbstractString)
+    output_path = String(path)
+    isempty(strip(output_path)) && throw(ArgumentError("output path must not be empty"))
+
     graph = _ontology_graph(ontology)
     document = _rdfxml_document(graph)
-    output_path = String(path)
     mkpath(dirname(output_path))
     open(output_path, "w") do io
         EzXML.prettyprint(io, document)

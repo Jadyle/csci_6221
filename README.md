@@ -1,241 +1,266 @@
 # TaxonomyOntologyConverter
 
-TaxonomyOntologyConverter is a Julia package for research into converting
-taxonomies into ontologies. It includes a typed, LLM-independent intermediate
-template, a provider-neutral extraction pipeline, a semantic in-memory
-ontology model, deterministic ontology generation, and RDF/XML serialization
-for Protégé.
+TaxonomyOntologyConverter is a Julia research-software package for transforming
+taxonomy documents into OWL ontologies. An LLM can extract concepts and
+relationships into a typed intermediate template; Julia validates that template,
+builds an LLM-independent ontology model, and serializes the model as RDF/XML
+that can be inspected in Protégé.
+
+The package does not include an LLM provider or automatically apply enrichment
+suggestions. The bundled runnable example uses a deterministic mock provider so
+the basic workflow can be reproduced without credentials or network access.
 
 ## Architecture
 
-- `Taxonomy` — taxonomy loading, parsing, and validation.
-- `Template` — intermediate-template schema, validation, and serialization.
-- `LLM` — structured extraction prompts, provider interface, and template validation.
-- `Ontology` — semantic ontology model, deterministic template-to-model
-  generation, and RDF/XML serialization.
-- `Enrichment` — manual and LLM-assisted ontology enrichment.
-- `Utils` — logging and configuration utilities.
+```text
+Taxonomy file
+    → load, parse, validate
+    → provider-neutral LLM extraction
+    → intermediate JSON template
+    → template validation
+    → deterministic ontology model
+    → ontology validation
+    → RDF/XML (.owl)
+    → Protégé
+```
 
-Each component is a nested module, for example
-`TaxonomyOntologyConverter.Taxonomy`. The taxonomy parser checks JSON syntax
-and normalizes line endings; other supported formats are passed to extraction
-as text rather than structurally parsed. Ontology enrichment supports manual
-changes and reviewable LLM proposals.
+The implementation is divided into nested Julia modules:
 
-### Intermediate template
+- `Taxonomy` loads input files, detects their format, normalizes text, and
+  performs input validation.
+- `Template` defines the intermediate representation, validation rules, and
+  JSON serialization.
+- `LLM` defines the provider interface, extraction prompt, mock provider, and
+  structured response parsing.
+- `Ontology` defines the semantic model, deterministic template conversion,
+  model validation, and RDF/XML serialization.
+- `Enrichment` offers manual ontology edits and reviewable LLM proposals.
+- `Utils` is reserved for shared utilities; logging and configuration helpers
+  are not implemented yet.
 
-The central data model is in `TaxonomyOntologyConverter.Template`:
+## Installation
 
-- `Concept` stores an identifier, optional name and description, labels, an
-  optional parent identifier, and metadata.
-- `ObjectRelationship` stores an identifier, optional name, source and target
-  concept identifiers, description, and metadata.
-- `DataProperty` stores an identifier, optional name and value type, optional
-  description and concept domain, and metadata.
-- `IntermediateTemplate` groups these records with a schema version and
-  template-level metadata.
+Use Julia 1.11 or newer. From a checkout of this repository, instantiate the
+project environment:
 
-Optional extracted fields are represented as `Union{Nothing,String}` or empty
-collections. Constructors preserve incomplete records; `validate` returns
-structured issues for missing required values, duplicate identifiers, invalid
-references, and parent cycles. JSON support is provided by `to_json`,
-`from_json`, `to_dict`, and `from_dict`. The example at
-[`data/intermediate/example-template.json`](./data/intermediate/example-template.json)
-shows the serialized shape.
+```sh
+julia --project=. -e 'using Pkg; Pkg.instantiate()'
+```
+
+Then load the package from the repository root:
+
+```sh
+julia --project=.
+```
+
+```julia
+using TaxonomyOntologyConverter
+```
+
+RDF.jl is currently unregistered and is pinned to a reviewed git revision in
+`Project.toml`. The package does not install or configure an LLM provider.
+
+## Taxonomy input format
+
+`convert_taxonomy(path; ...)` accepts a path to a non-empty text file.
+The loader recognizes `.json`, `.csv`, `.html`/`.htm`, `.md`/`.markdown`,
+`.xml`, and `.txt` extensions. Unknown extensions are treated as text.
+
+At present, parsing normalizes line endings and checks JSON syntax for `.json`
+files. It does not interpret CSV columns, XML elements, HTML, or Markdown into a
+taxonomy structure. Those documents are passed as text to the configured LLM
+for extraction. The LLM provider is responsible for handling input size limits
+and any provider-specific document processing.
+
+The bundled text example is an indented hierarchy:
+
+```text
+Artificial intelligence
+  Machine learning
+    Deep learning
+```
+
+See [`data/input/example-taxonomy.txt`](./data/input/example-taxonomy.txt).
+
+## Intermediate template
+
+The intermediate representation keeps extraction independent of both a
+particular LLM and OWL serialization. It contains:
+
+- Concepts/classes with IDs, optional names and descriptions, labels, optional
+  parent IDs, and metadata.
+- Object relationships with IDs, names, source and target concept IDs,
+  descriptions, and metadata.
+- Data properties with IDs, names, value types, optional concept domains,
+  descriptions, and metadata.
+- Template schema version and metadata, including an optional ontology IRI.
+
+Incomplete fields can be represented during extraction; `Template.validate`
+reports missing required fields, duplicate IDs, invalid references, and
+hierarchy cycles. `Template.from_json`/`to_json` and `from_dict`/`to_dict`
+support JSON interchange. The bundled example is
+[`data/intermediate/example-template.json`](./data/intermediate/example-template.json).
 
 ```julia
 using TaxonomyOntologyConverter
 const Template = TaxonomyOntologyConverter.Template
 
-data = read("data/intermediate/example-template.json", String)
-template = Template.from_json(data)
+template = Template.from_json(read("data/intermediate/example-template.json", String))
 issues = Template.validate(template)
+isempty(issues) || error(issues)
 ```
 
-### LLM extraction
+## LLM extraction
 
-The LLM layer requests JSON for the intermediate template; it does not generate
-OWL. Implementations subtype `AbstractLLM` and implement
-`TaxonomyOntologyConverter.LLM.complete(llm, prompt)`. Taxonomy types can be
-adapted by implementing `TaxonomyOntologyConverter.LLM.taxonomy_text(taxonomy)`.
-The included `MockLLM` supports offline tests. Extraction parses the response
-and raises an `ExtractionValidationError` if Julia validation finds issues.
+The LLM is asked for the intermediate JSON template, not OWL. Julia parses and
+validates the response before the pipeline continues. The provider-neutral
+interface is `TaxonomyOntologyConverter.LLM.AbstractLLM`; a provider implements
+`TaxonomyOntologyConverter.LLM.complete(llm, prompt)` and returns response
+text. No API key is embedded in the package. Provider credentials should be
+read from environment variables or the provider's recommended configuration
+mechanism.
 
-```julia
-const LLM = TaxonomyOntologyConverter.LLM
-mock = LLM.MockLLM(read("data/intermediate/example-template.json", String))
-template = LLM.extract_template(mock, "Example taxonomy text")
-```
+`LLM.MockLLM` is included for tests and offline examples. It returns a supplied
+response verbatim; it does not perform extraction itself.
 
-Provider credentials are outside the core package; a real provider should obtain
-them from environment variables or an application configuration mechanism. No
-API keys or provider-specific dependencies are included.
+## Ontology generation
 
-### Ontology model
+`Ontology.generate_ontology(template)` maps a validated template to the
+in-memory ontology model without an LLM call. Concepts become classes and
+parent IDs become subclass axioms. Object relationships become object
+properties with source and target domains/ranges; data properties map to
+datatype properties. Labels, definitions, and metadata are retained as
+annotations where applicable. Generation processes entities deterministically
+and validates the resulting model.
 
-`TaxonomyOntologyConverter.Ontology` provides an LLM-independent in-memory
-semantic model. `OntologyModel` stores ontology metadata and annotations;
-`OntologyClass` stores labels, definitions, and superclass links;
-`ObjectProperty` stores class domains/ranges; `DataProperty` stores class
-domains and datatype ranges; `OntologyIndividual` stores class types; and
-`OntologyRelationship` represents an object-property assertion between
-individuals. The `add_*` operations check references as entities are added,
-and `validate` checks the assembled model. The model is serialized to OWL's RDF mapping as RDF/XML.
+The ontology model can also represent individuals, relationship assertions,
+annotations, and class restrictions for later enrichment.
 
-The intermediate template maps naturally to this model:
+## OWL output
 
-- Each `Template.Concept` becomes an `OntologyClass`; its `parent` becomes an
-  `add_subclass!` link.
-- Each `Template.ObjectRelationship` becomes an `ObjectProperty` whose domain
-  and range are its source and target concepts. It is not an
-  `OntologyRelationship`, which represents an assertion between individuals.
-- Each `Template.DataProperty` becomes a `DataProperty`, mapping its concept
-  domain and value type to the model's domain and datatype range.
-- Template metadata can populate ontology metadata; concept/property metadata
-  can be represented as annotations or retained as provenance.
+`Ontology.save_ontology(ontology, path)` validates the model and writes RDF/XML
+to the requested path. RDF.jl constructs the RDF graph, and EzXML writes the
+RDF/XML document. The output includes available ontology metadata, classes,
+subclass axioms, properties, individuals, annotations, and restrictions.
 
-`Ontology.generate_ontology(template)` performs this mapping after validating
-the template, then validates the resulting model. It does not use an LLM and
-does not serialize OWL. It processes records in identifier order so equivalent
-validated templates produce the same model structure.
+When entities use local identifiers (for example `deep-learning`), provide an
+absolute ontology IRI in template metadata, such as
+`"iri": "https://example.org/my-ontology"`. Local IDs are resolved against
+that base; absolute entity IRIs can be used without a base IRI.
 
-```julia
-const Ontology = TaxonomyOntologyConverter.Ontology
-ontology = Ontology.generate_ontology(template)
-ontology.classes["deep-learning"].superclasses
-```
+## Protégé usage
 
-### OWL serialization and Protégé
+1. Run the example or your own conversion and note the generated `.owl` path.
+2. Open Protégé.
+3. Use **File → Open** and select the `.owl` file.
+4. Inspect the ontology hierarchy, entities, annotations, and axioms.
 
-`Ontology.save_ontology(ontology, path)` validates the ontology model and writes
-an RDF/XML `.owl` file. RDF.jl is used to construct the RDF graph; EzXML builds
-the RDF/XML document because RDF.jl's bundled RDF/XML extension supports
-parsing, but not writing. RDF/XML is a standard OWL serialization that can be
-opened directly in Protégé.
+RDF/XML is used so the generated file can be opened directly in Protégé.
 
-RDF.jl was selected for its typed RDF graph and triple API; alternatives
-evaluated for this project documented Turtle/N-Triples writers rather than an
-RDF/XML writer. RDF.jl is currently unregistered, so its reviewed git revision
-is pinned in `Project.toml`; this dependency is an adoption risk to reassess
-before a production release. The `[sources]` mechanism requires Julia 1.11 or
-newer.
+## Ontology enrichment
 
-Local entity identifiers such as `deep-learning` are resolved against the
-ontology IRI from template metadata. An ontology without an IRI can still be
-serialized if its entity identifiers are already absolute IRIs; local IDs
-without a base IRI are rejected. Common prefixes such as `xsd:`, `rdfs:`, and
-`dcterms:` are expanded when used for property and datatype IRIs. Primitive
-datatype names such as `number`, `string`, and `boolean` map to XSD datatypes.
-
-From the project root, run the complete example workflow:
-
-```sh
-julia --project -e 'using TaxonomyOntologyConverter; T=TaxonomyOntologyConverter.Template; O=TaxonomyOntologyConverter.Ontology; template=T.from_json(read("data/intermediate/example-template.json", String)); ontology=O.generate_ontology(template); O.save_ontology(ontology, "data/output/example.owl")'
-```
-
-Then open [`data/output/example.owl`](./data/output/example.owl) in Protégé to
-visualize and inspect the generated classes, properties, annotations, and
-relationships.
-
-### End-to-end conversion
-
-`convert_taxonomy` runs input loading, parsing, taxonomy validation, LLM
-extraction, template validation, ontology generation and validation, and OWL
-serialization. Pass an implementation of `LLM.AbstractLLM`; the core package
-does not select or configure a provider. The function returns a
-`ConversionResult` containing the parsed taxonomy, validated template,
-ontology model, and saved file path. Errors identify the pipeline stage and
-preserve the underlying cause.
-
-The included taxonomy and intermediate-template response make an offline
-example:
-
-```sh
-julia --project=. -e '
-using TaxonomyOntologyConverter
-const LLM = TaxonomyOntologyConverter.LLM
-mock = LLM.MockLLM(read("data/intermediate/example-template.json", String))
-result = convert_taxonomy(
-    "data/input/example-taxonomy.txt";
-    llm=mock,
-    output_path="data/output/example-pipeline.owl",
-)
-println(result.output_path)
-'
-```
-
-Open [`data/output/example-pipeline.owl`](./data/output/example-pipeline.owl)
-in Protégé. For optional enrichment, use `result.ontology` with the manual
-enrichment functions or request LLM suggestions, review them, and explicitly
-apply approved suggestions before exporting the final OWL file; conversion
-never applies enrichment automatically.
-
-### Ontology enrichment
-
-Both enrichment modes update the same `OntologyModel`. Manual operations are
-available from `TaxonomyOntologyConverter.Enrichment` for classes, object and
-data properties, individuals, relationships, definitions, annotations, and
-restrictions. `add_object_property!` represents relationships between classes
-through domains and ranges; `add_relationship!` records assertions between
-individuals. For example:
+Manual enrichment and LLM-assisted enrichment operate on the same
+`OntologyModel`. LLM enrichment only returns structured suggestions; it never
+mutates the ontology. Review proposals, explicitly accept selected suggestion
+IDs, validate the result, and then export the updated ontology.
 
 ```julia
 const Enrichment = TaxonomyOntologyConverter.Enrichment
-Enrichment.add_class!(ontology, "Mammal"; parent="Animal",
-                      definition="A warm-blooded vertebrate.")
-Enrichment.add_object_property!(ontology, "lives-in";
-                                domains=["Mammal"], ranges=["Habitat"])
-Enrichment.add_restriction!(ontology, "Mammal", "lives-in";
-                            kind=:some_values_from, value="Habitat")
+const Ontology = TaxonomyOntologyConverter.Ontology
+const Template = TaxonomyOntologyConverter.Template
+
+template = Template.from_json(read("data/intermediate/example-template.json", String))
+ontology = Ontology.generate_ontology(template)
+Enrichment.add_class!(
+    ontology,
+    "Mammal";
+    parent="species",
+    definition="A warm-blooded vertebrate.",
+)
+Enrichment.add_object_property!(
+    ontology,
+    "lives-in";
+    domains=["Mammal"],
+    ranges=["habitat"],
+)
+Enrichment.add_restriction!(
+    ontology,
+    "Mammal",
+    "lives-in";
+    kind=:some_values_from,
+    value="habitat",
+)
+Ontology.save_ontology(ontology, "data/output/enriched.owl")
 ```
 
-LLM-assisted enrichment accepts a text dataset (including CSV or documentation)
-or a JSON-compatible dictionary/array. The LLM returns validated structured
-suggestions; it never receives an API that can modify the ontology directly.
-Review suggestion IDs, then pass only approved IDs to `apply_suggestions!`.
-Application is atomic and validates the updated model:
+For LLM proposals, call `Enrichment.propose_enrichment(llm, ontology, dataset)`,
+inspect `proposal.suggestions`, then call
+`Enrichment.apply_suggestions!(ontology, proposal, accepted_ids)` with only the
+IDs approved by the user. Rejected or unreviewed suggestions are not applied.
 
-```julia
-const LLM = TaxonomyOntologyConverter.LLM
-llm = MyProvider() # subtype LLM.AbstractLLM and implement LLM.complete
-proposal = Enrichment.propose_enrichment(llm, ontology, read("research-notes.csv", String))
-foreach(s -> println(s.id, ": ", s.action, " — ", s.rationale), proposal.suggestions)
+## Examples
 
-# Apply only after reviewing the printed proposals:
-Enrichment.apply_suggestions!(ontology, proposal, ["s1", "s3"])
-@assert isempty(TaxonomyOntologyConverter.Ontology.validate(ontology))
-TaxonomyOntologyConverter.Ontology.save_ontology(ontology, "data/output/enriched.owl")
+From the repository root, run the complete local workflow:
+
+```sh
+julia --project=. examples/basic_conversion.jl
 ```
 
-Supported restrictions include existential/universal fillers, has-value, and
-minimum/maximum/exact cardinality constraints. `Ontology.validate` checks
-restriction references before OWL export.
+The example pairs the bundled taxonomy with a matching canned JSON extraction
+in [`examples/mock-extraction.json`](./examples/mock-extraction.json). It
+writes `data/output/example-pipeline.owl`; open that file in Protégé. Replace
+`MockLLM` with an implementation of `LLM.AbstractLLM` to connect a real
+provider.
 
-## Run the tests
+## Testing
 
-From the package root, start Julia and run:
+Run the package test suite from the repository root:
+
+```sh
+julia --project=. -e 'using Pkg; Pkg.test()'
+```
+
+Or, in the Julia REPL:
 
 ```julia
 ] test
 ```
 
-Alternatively, run the tests without entering the package manager:
+Tests cover taxonomy loading/parsing/validation, template creation and
+validation, mock LLM extraction, ontology generation and validation, RDF/XML
+serialization, enrichment review/application, and end-to-end conversion.
+Tests do not require API credentials or network access.
 
-```sh
-julia --project -e 'using Pkg; Pkg.test()'
-```
+## Project structure
 
-## Load the package
-
-From the package root, start Julia with the project environment:
-
-```sh
-julia --project
-```
-
-Then load and try the package:
-
-```julia
-using TaxonomyOntologyConverter
-hello()
+```text
+.
+├── Project.toml
+├── README.md
+├── .gitignore
+├── examples/
+│   ├── basic_conversion.jl
+│   └── mock-extraction.json
+├── data/
+│   ├── input/
+│   ├── intermediate/
+│   └── output/
+├── src/
+│   ├── TaxonomyOntologyConverter.jl
+│   ├── pipeline.jl
+│   ├── taxonomy/
+│   ├── template/
+│   ├── llm/
+│   ├── ontology/
+│   ├── enrichment/
+│   └── utils/
+├── docs/
+└── test/
+    ├── runtests.jl
+    ├── taxonomy/
+    ├── template/
+    ├── llm/
+    ├── ontology/
+    ├── enrichment/
+    └── pipeline/
 ```

@@ -30,6 +30,7 @@ function parse_taxonomy(document::TaxonomyDocument)
         try
             JSON.parse(content)
         catch error
+            error isa InterruptException && rethrow()
             throw(TaxonomyParseError(document.path, error))
         end
     end

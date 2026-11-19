@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0",
+  "concepts": [
+    {
+      "id": "artificial-intelligence",
+      "name": "Artificial Intelligence",
+      "labels": ["AI"],
+      "description": "The study and engineering of intelligent systems.",
+      "parent": null,
+      "metadata": {}
+    },
+    {
+      "id": "machine-learning",
+      "name": "Machine Learning",
+      "labels": [],
+      "description": "A field of artificial intelligence that studies learning from data.",
+      "parent": "artificial-intelligence",
+      "metadata": {}
+    },
+    {
+      "id": "deep-learning",
+      "name": "Deep Learning",
+      "labels": [],
+      "description": "A subfield of machine learning based on multilayered models.",
+      "parent": "machine-learning",
+      "metadata": {}
+    }
+  ],
+  "relationships": [],
+  "properties": [],
+  "metadata": {
+    "iri": "https://example.org/taxonomy-ontology-converter/ai",
+    "version": "1.0",
+    "source": "Bundled offline example"
+  }
+}

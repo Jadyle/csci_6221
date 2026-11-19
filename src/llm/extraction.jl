@@ -52,6 +52,7 @@ function parse_template_response(response::AbstractString)
     try
         return from_json(response)::IntermediateTemplate
     catch error
+        error isa InterruptException && rethrow()
         throw(ExtractionResponseError(error))
     end
 end
