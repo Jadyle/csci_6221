@@ -19,6 +19,9 @@ include("template/serialization.jl")
 end
 
 module LLM
+using JSON
+using ..Template: IntermediateTemplate, ValidationIssue, from_json, validate
+
 include("llm/prompting.jl")
 include("llm/extraction.jl")
 include("llm/enrichment.jl")
@@ -26,10 +29,10 @@ end
 
 module Ontology
 include("ontology/model.jl")
-include("ontology/generator.jl")
 include("ontology/classes.jl")
 include("ontology/properties.jl")
 include("ontology/relationships.jl")
+include("ontology/generator.jl")
 end
 
 module Enrichment

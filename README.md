@@ -2,21 +2,21 @@
 
 TaxonomyOntologyConverter is a Julia package for research into converting
 taxonomies into ontologies. It includes a typed, LLM-independent intermediate
-template for extracted concepts, relationships, and data properties. Ontology
-generation and taxonomy extraction are not implemented yet.
+template, a provider-neutral extraction pipeline, and a semantic in-memory
+ontology model. OWL generation and serialization are not implemented yet.
 
 ## Architecture
 
 - `Taxonomy` — taxonomy loading, parsing, and validation.
 - `Template` — intermediate-template schema, validation, and serialization.
-- `LLM` — prompting, information extraction, and LLM-assisted enrichment.
-- `Ontology` — ontology model, generation, classes, properties, and relationships.
+- `LLM` — structured extraction prompts, provider interface, and template validation.
+- `Ontology` — semantic ontology model for classes, properties, individuals, and relationships.
 - `Enrichment` — manual and LLM-assisted ontology enrichment.
 - `Utils` — logging and configuration utilities.
 
 Each component is a nested module, for example
-`TaxonomyOntologyConverter.Taxonomy`. The corresponding source files are
-placeholders for future implementations except for the `Template` module.
+`TaxonomyOntologyConverter.Taxonomy`. Taxonomy parsing and ontology
+generation/serialization remain placeholders.
 
 ### Intermediate template
 
@@ -47,6 +47,50 @@ data = read("data/intermediate/example-template.json", String)
 template = Template.from_json(data)
 issues = Template.validate(template)
 ```
+
+### LLM extraction
+
+The LLM layer requests JSON for the intermediate template; it does not generate
+OWL. Implementations subtype `AbstractLLM` and implement
+`TaxonomyOntologyConverter.LLM.complete(llm, prompt)`. Taxonomy types can be
+adapted by implementing `TaxonomyOntologyConverter.LLM.taxonomy_text(taxonomy)`.
+The included `MockLLM` supports offline tests. Extraction parses the response
+and raises an `ExtractionValidationError` if Julia validation finds issues.
+
+```julia
+const LLM = TaxonomyOntologyConverter.LLM
+mock = LLM.MockLLM(read("data/intermediate/example-template.json", String))
+template = LLM.extract_template(mock, "Example taxonomy text")
+```
+
+Provider credentials are outside the core package; a real provider should obtain
+them from environment variables or an application configuration mechanism. No
+API keys or provider-specific dependencies are included.
+
+### Ontology model
+
+`TaxonomyOntologyConverter.Ontology` provides an LLM-independent in-memory
+semantic model. `OntologyModel` stores ontology metadata and annotations;
+`OntologyClass` stores labels, definitions, and superclass links;
+`ObjectProperty` stores class domains/ranges; `DataProperty` stores class
+domains and datatype ranges; `OntologyIndividual` stores class types; and
+`OntologyRelationship` represents an object-property assertion between
+individuals. The `add_*` operations check references as entities are added,
+and `validate` checks the assembled model. This model is not an OWL serializer.
+
+The intermediate template maps naturally to this model:
+
+- Each `Template.Concept` becomes an `OntologyClass`; its `parent` becomes an
+  `add_subclass!` link.
+- Each `Template.ObjectRelationship` becomes an `ObjectProperty` whose domain
+  and range are its source and target concepts. It is not an
+  `OntologyRelationship`, which represents an assertion between individuals.
+- Each `Template.DataProperty` becomes a `DataProperty`, mapping its concept
+  domain and value type to the model's domain and datatype range.
+- Template metadata can populate ontology metadata; concept/property metadata
+  can be represented as annotations or retained as provenance.
+
+No automatic template-to-ontology mapper has been added yet.
 
 ## Run the tests
 
