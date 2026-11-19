@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#" xmlns:ns1="urn:taxonomy-ontology-converter:metadata:">
+  <rdf:Description rdf:about="https://example.org/taxonomy-ontology-converter/example">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Ontology"/>
+    <ns1:source rdf:datatype="http://www.w3.org/2001/XMLSchema#string">"example taxonomy extraction"</ns1:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://example.org/taxonomy-ontology-converter/example#habitat">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:comment rdf:datatype="http://www.w3.org/2001/XMLSchema#string">The natural environment of an organism.</rdfs:comment>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Habitat</rdfs:label>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">habitat</rdfs:label>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://example.org/taxonomy-ontology-converter/example#inhabits">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#ObjectProperty"/>
+    <rdfs:comment rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Associates a species with its habitat.</rdfs:comment>
+    <rdfs:domain rdf:resource="https://example.org/taxonomy-ontology-converter/example#species"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">inhabits</rdfs:label>
+    <rdfs:range rdf:resource="https://example.org/taxonomy-ontology-converter/example#habitat"/>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://example.org/taxonomy-ontology-converter/example#species">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Class"/>
+    <rdfs:comment rdf:datatype="http://www.w3.org/2001/XMLSchema#string">A group of organisms sharing defining characteristics.</rdfs:comment>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Species</rdfs:label>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">organism type</rdfs:label>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">species</rdfs:label>
+    <ns1:confidence rdf:datatype="http://www.w3.org/2001/XMLSchema#string">0.98</ns1:confidence>
+    <ns1:source rdf:datatype="http://www.w3.org/2001/XMLSchema#string">"Example taxonomy"</ns1:source>
+  </rdf:Description>
+  <rdf:Description rdf:about="https://example.org/taxonomy-ontology-converter/example#typical-lifespan">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#DatatypeProperty"/>
+    <rdfs:comment rdf:datatype="http://www.w3.org/2001/XMLSchema#string">Typical lifespan, in years.</rdfs:comment>
+    <rdfs:domain rdf:resource="https://example.org/taxonomy-ontology-converter/example#species"/>
+    <rdfs:label rdf:datatype="http://www.w3.org/2001/XMLSchema#string">typical lifespan</rdfs:label>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#decimal"/>
+    <ns1:unit rdf:datatype="http://www.w3.org/2001/XMLSchema#string">"years"</ns1:unit>
+  </rdf:Description>
+</rdf:RDF>
+

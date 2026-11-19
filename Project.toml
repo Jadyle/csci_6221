@@ -4,10 +4,18 @@ version = "0.1.0"
 authors = ["Lina"]
 
 [deps]
+EzXML = "8f5d6c58-4d21-5cfd-889c-e3ad7ee6a615"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+RDF = "3fbc022c-18f7-42fc-beaf-ca56153ab0b3"
+
+[sources]
+RDF = {rev = "ea3db42b7c7426bbc05d9e50288a266f3d0117bb", url = "https://github.com/mthelm85/RDF.jl"}
 
 [compat]
+EzXML = "1.2.3"
 JSON = "1.13.4"
+RDF = "0.1.0"
+julia = "1.11"
 
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"

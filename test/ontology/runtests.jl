@@ -1,4 +1,5 @@
 using Test
+using RDF
 
 const Ontology = TaxonomyOntologyConverter.Ontology
 const Template = TaxonomyOntologyConverter.Template
@@ -276,5 +277,163 @@ end
         @test_throws Ontology.OntologyGenerationError Ontology.generate_ontology(
             template_with_empty_description,
         )
+    end
+
+    @testset "RDF/XML ontology serialization" begin
+        ontology = Ontology.OntologyModel(
+            iri="https://example.org/ecology",
+            version="1.0",
+            labels=["Ecology"],
+            definitions=["An example ontology."],
+            metadata=Dict("source" => "unit test"),
+        )
+        plant = Ontology.add_class!(
+            ontology,
+            "Plant species";
+            labels=["plant", "species"],
+            definitions=["A plant species."],
+        )
+        habitat = Ontology.add_class!(ontology, "Habitat"; labels=["habitat"])
+        Ontology.add_subclass!(ontology, "Plant species", "Habitat")
+        grows_in = Ontology.add_object_property!(
+            ontology,
+            "grows-in";
+            labels=["grows in"],
+            domains=["Plant species"],
+            ranges=["Habitat"],
+        )
+        Ontology.add_data_property!(
+            ontology,
+            "height";
+            labels=["height"],
+            domains=["Plant species"],
+            ranges=["xsd:decimal"],
+        )
+        Ontology.add_data_property!(
+            ontology,
+            "typical-lifespan";
+            domains=["Plant species"],
+            ranges=["number"],
+        )
+        oak = Ontology.add_individual!(
+            ontology,
+            "oak-1";
+            types=["Plant species"],
+            labels=["Oak"],
+        )
+        forest = Ontology.add_individual!(ontology, "forest-1"; types=["Habitat"])
+        relationship = Ontology.add_relationship!(
+            ontology,
+            oak.id,
+            grows_in.id,
+            forest.id,
+        )
+        Ontology.add_annotation!(plant, "dcterms:source", "field guide"; language="en")
+        Ontology.add_annotation!(relationship, "rdfs:comment", "Observed in the field.")
+
+        mktempdir() do directory
+            path = joinpath(directory, "nested", "example.owl")
+            second_path = joinpath(directory, "second.owl")
+            @test Ontology.save_ontology(ontology, path) == path
+            Ontology.save_ontology(ontology, second_path)
+            @test read(path, String) == read(second_path, String)
+
+            graph = open(path, "r") do io
+                read(io, :rdfxml, RDF.Graph)
+            end
+            base = "https://example.org/ecology#"
+            rdf_type = RDF.IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+            rdf_label = RDF.IRI("http://www.w3.org/2000/01/rdf-schema#label")
+            rdfs_subclass = RDF.IRI("http://www.w3.org/2000/01/rdf-schema#subClassOf")
+            rdfs_domain = RDF.IRI("http://www.w3.org/2000/01/rdf-schema#domain")
+            rdfs_range = RDF.IRI("http://www.w3.org/2000/01/rdf-schema#range")
+            owl_class = RDF.IRI("http://www.w3.org/2002/07/owl#Class")
+            owl_object_property = RDF.IRI("http://www.w3.org/2002/07/owl#ObjectProperty")
+            owl_ontology = RDF.IRI("http://www.w3.org/2002/07/owl#Ontology")
+            owl_version_info = RDF.IRI("http://www.w3.org/2002/07/owl#versionInfo")
+            xsd_decimal = RDF.IRI("http://www.w3.org/2001/XMLSchema#decimal")
+            ontology_iri = RDF.IRI("https://example.org/ecology")
+            plant_iri = RDF.IRI(base * "Plant%20species")
+            habitat_iri = RDF.IRI(base * "Habitat")
+            property_iri = RDF.IRI(base * "grows-in")
+            oak_iri = RDF.IRI(base * "oak-1")
+            forest_iri = RDF.IRI(base * "forest-1")
+
+            @test RDF.Triple(ontology_iri, rdf_type, owl_ontology) in graph
+            @test RDF.Triple(ontology_iri, owl_version_info, RDF.Literal("1.0")) in graph
+            @test RDF.Triple(plant_iri, rdf_type, owl_class) in graph
+            @test RDF.Triple(plant_iri, rdfs_subclass, habitat_iri) in graph
+            @test RDF.Triple(property_iri, rdf_type, owl_object_property) in graph
+            @test RDF.Triple(
+                RDF.IRI(base * "height"),
+                rdfs_domain,
+                plant_iri,
+            ) in graph
+            @test RDF.Triple(
+                property_iri,
+                rdfs_range,
+                habitat_iri,
+            ) in graph
+            @test RDF.Triple(
+                RDF.IRI(base * "height"),
+                rdfs_range,
+                xsd_decimal,
+            ) in graph
+            @test RDF.Triple(
+                RDF.IRI(base * "typical-lifespan"),
+                rdfs_range,
+                xsd_decimal,
+            ) in graph
+            @test RDF.Triple(
+                plant_iri,
+                rdf_label,
+                RDF.Literal("plant"),
+            ) in graph
+            @test RDF.Triple(oak_iri, property_iri, forest_iri) in graph
+            @test RDF.Triple(
+                plant_iri,
+                RDF.IRI("http://purl.org/dc/terms/source"),
+                RDF.Literal("field guide"; lang="en"),
+            ) in graph
+            @test any(
+                triple -> triple.predicate == RDF.IRI(
+                    "urn:taxonomy-ontology-converter:metadata:source",
+                ),
+                graph,
+            )
+
+            axiom_nodes = [
+                triple.subject for triple in graph
+                if triple.predicate == rdf_type && triple.object ==
+                    RDF.IRI("http://www.w3.org/2002/07/owl#Axiom")
+            ]
+            @test length(axiom_nodes) == 1
+            @test RDF.Triple(
+                only(axiom_nodes),
+                RDF.IRI("http://www.w3.org/2002/07/owl#annotatedSource"),
+                oak_iri,
+            ) in graph
+            @test RDF.Triple(
+                only(axiom_nodes),
+                RDF.IRI("http://www.w3.org/2000/01/rdf-schema#comment"),
+                RDF.Literal("Observed in the field."),
+            ) in graph
+        end
+    end
+
+    @testset "serialization IRI requirements" begin
+        ontology_without_iri = Ontology.OntologyModel()
+        Ontology.add_class!(ontology_without_iri, "https://example.org/AbsoluteClass")
+        invalid_local = Ontology.OntologyModel()
+        Ontology.add_class!(invalid_local, "LocalClass")
+
+        mktempdir() do directory
+            path = joinpath(directory, "anonymous.owl")
+            @test Ontology.save_ontology(ontology_without_iri, path) == path
+            @test_throws ArgumentError Ontology.save_ontology(
+                invalid_local,
+                joinpath(directory, "invalid.owl"),
+            )
+        end
     end
 end

@@ -29,6 +29,8 @@ end
 
 module Ontology
 using JSON
+using RDF
+using EzXML
 import ..Template
 
 include("ontology/model.jl")
@@ -36,6 +38,7 @@ include("ontology/classes.jl")
 include("ontology/properties.jl")
 include("ontology/relationships.jl")
 include("ontology/generator.jl")
+include("ontology/serialization.jl")
 end
 
 module Enrichment

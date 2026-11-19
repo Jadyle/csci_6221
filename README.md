@@ -2,21 +2,23 @@
 
 TaxonomyOntologyConverter is a Julia package for research into converting
 taxonomies into ontologies. It includes a typed, LLM-independent intermediate
-template, a provider-neutral extraction pipeline, and a semantic in-memory
-ontology model. OWL generation and serialization are not implemented yet.
+template, a provider-neutral extraction pipeline, a semantic in-memory
+ontology model, deterministic ontology generation, and RDF/XML serialization
+for Protégé.
 
 ## Architecture
 
 - `Taxonomy` — taxonomy loading, parsing, and validation.
 - `Template` — intermediate-template schema, validation, and serialization.
 - `LLM` — structured extraction prompts, provider interface, and template validation.
-- `Ontology` — semantic ontology model and deterministic template-to-model generation.
+- `Ontology` — semantic ontology model, deterministic template-to-model
+  generation, and RDF/XML serialization.
 - `Enrichment` — manual and LLM-assisted ontology enrichment.
 - `Utils` — logging and configuration utilities.
 
 Each component is a nested module, for example
 `TaxonomyOntologyConverter.Taxonomy`. Taxonomy parsing and OWL
-generation/serialization remain placeholders.
+enrichment remain placeholders.
 
 ### Intermediate template
 
@@ -76,7 +78,7 @@ semantic model. `OntologyModel` stores ontology metadata and annotations;
 domains and datatype ranges; `OntologyIndividual` stores class types; and
 `OntologyRelationship` represents an object-property assertion between
 individuals. The `add_*` operations check references as entities are added,
-and `validate` checks the assembled model. This model is not an OWL serializer.
+and `validate` checks the assembled model. The model is serialized to OWL's RDF mapping as RDF/XML.
 
 The intermediate template maps naturally to this model:
 
@@ -100,6 +102,38 @@ const Ontology = TaxonomyOntologyConverter.Ontology
 ontology = Ontology.generate_ontology(template)
 ontology.classes["deep-learning"].superclasses
 ```
+
+### OWL serialization and Protégé
+
+`Ontology.save_ontology(ontology, path)` validates the ontology model and writes
+an RDF/XML `.owl` file. RDF.jl is used to construct the RDF graph; EzXML builds
+the RDF/XML document because RDF.jl's bundled RDF/XML extension supports
+parsing, but not writing. RDF/XML is a standard OWL serialization that can be
+opened directly in Protégé.
+
+RDF.jl was selected for its typed RDF graph and triple API; alternatives
+evaluated for this project documented Turtle/N-Triples writers rather than an
+RDF/XML writer. RDF.jl is currently unregistered, so its reviewed git revision
+is pinned in `Project.toml`; this dependency is an adoption risk to reassess
+before a production release. The `[sources]` mechanism requires Julia 1.11 or
+newer.
+
+Local entity identifiers such as `deep-learning` are resolved against the
+ontology IRI from template metadata. An ontology without an IRI can still be
+serialized if its entity identifiers are already absolute IRIs; local IDs
+without a base IRI are rejected. Common prefixes such as `xsd:`, `rdfs:`, and
+`dcterms:` are expanded when used for property and datatype IRIs. Primitive
+datatype names such as `number`, `string`, and `boolean` map to XSD datatypes.
+
+From the project root, run the complete example workflow:
+
+```sh
+julia --project -e 'using TaxonomyOntologyConverter; T=TaxonomyOntologyConverter.Template; O=TaxonomyOntologyConverter.Ontology; template=T.from_json(read("data/intermediate/example-template.json", String)); ontology=O.generate_ontology(template); O.save_ontology(ontology, "data/output/example.owl")'
+```
+
+Then open [`data/output/example.owl`](./data/output/example.owl) in Protégé to
+visualize and inspect the generated classes, properties, annotations, and
+relationships.
 
 ## Run the tests
 
